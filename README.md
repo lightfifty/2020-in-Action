@@ -4,10 +4,10 @@
 目标是重铸java基础，转服务器开发。
 
 先收集别人优秀经验：
-https://www.zhihu.com/question/29581524/answer/44872235
-https://blog.csdn.net/h3243212/article/details/78132994
-https://github.com/brianway
-https://brianway.github.io/
+https://www.zhihu.com/question/29581524/answer/44872235  
+https://blog.csdn.net/h3243212/article/details/78132994  
+https://github.com/brianway  
+https://brianway.github.io/  
 
 
 
