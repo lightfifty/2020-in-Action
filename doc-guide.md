@@ -29,6 +29,6 @@ demo和图更容易让人理解
 一个文档的输出要经过收集信息、整理框架、实践结论、写作文档等流程。
 
 
-引用：
+引用：  
 https://juejin.im/post/5dfcc1536fb9a016121b4187?utm_source=gold_browser_extension
 https://github.com/ruanyf/document-style-guide
