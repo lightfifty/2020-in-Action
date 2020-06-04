@@ -1,0 +1,20 @@
+plugins {
+    id 'java'
+}
+
+group 'org.example'
+version '1.0-SNAPSHOT'
+
+repositories {
+//    mavenCentral()
+    maven {
+        url 'http://maven.aliyun.com/nexus/content/repositories/jcenter/'
+    }
+    google()
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    implementation "io.reactivex.rxjava3:rxjava:3.0.3"
+//    implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
+}
