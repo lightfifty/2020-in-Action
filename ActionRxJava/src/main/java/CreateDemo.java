@@ -80,7 +80,8 @@ public class CreateDemo {
 //        testCreate();
 //        testCreate1();
 //        testCreate2();
-        testDefer();
+//        testDefer();
+        testDefer1();
 
     }
 
@@ -95,7 +96,7 @@ public class CreateDemo {
         Observable<String> observable = Observable.defer(new Supplier<ObservableSource<? extends String>>() {
             @Override
             public ObservableSource<? extends String> get() throws Throwable {
-                System.out.println(System.currentTimeMillis()+" create Observable" );
+                System.out.println(System.currentTimeMillis() + " create Observable");
                 return new ObservableSource<String>() {
                     @Override
                     public void subscribe(@NonNull Observer<? super String> observer) {
@@ -119,7 +120,7 @@ public class CreateDemo {
         }
 
         //开始订阅
-        System.out.println(System.currentTimeMillis()+" start subscribe" );
+        System.out.println(System.currentTimeMillis() + " start subscribe");
         observable.subscribe(new Consumer<String>() {
             @Override
             public void accept(String s) throws Throwable {
@@ -127,4 +128,30 @@ public class CreateDemo {
             }
         });
     }
+
+    private static void testDefer1() {
+        List<String> arrayList = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            arrayList.add(i + "defer item");
+        }
+        //创建observable
+        Observable<String> observable = Observable.defer(() -> {
+            System.out.println(System.currentTimeMillis() + " create Observable");
+            return observer -> arrayList.forEach(item -> observer.onNext(item));
+        });
+        //处理数据时间
+        for (int i = 10; i < 20; i++) {
+            try {
+                Thread.sleep(1000);
+                arrayList.add(i + "defer item");
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        //开始订阅
+        System.out.println(System.currentTimeMillis() + " start subscribe");
+        observable.subscribe(s ->  System.out.println(System.currentTimeMillis() + " 收到事件:" + s));
+    }
+
+
 }

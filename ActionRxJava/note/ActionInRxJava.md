@@ -133,8 +133,6 @@ defer是推迟和延期的意思，deffer延期创建被观察者对象，会在
 
 上面图片中方框内的是事件发送流，非方框的是事件接收流，可以看出第一个观察者接收了红色事件队列，被观察者已经complete了。第二个观察者订阅的已经是绿色事件流了。
 
-
-
 ```java
 private static void testDefer() {
         List<String> arrayList = new ArrayList<>();
@@ -178,6 +176,44 @@ private static void testDefer() {
         });
     }
 ```
+
+上面的代码中虽然创建被观察者的代码在前，但其get方法直到底下subscribe运行之后才执行 。而且 每次订阅都会由get方法创建新的ObservableSource实例。
+
+同样我们使用Lambda表达式优化一下代码，可以精简结构。
+
+```java
+ private static void testDefer1() {
+        List<String> arrayList = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            arrayList.add(i + "defer item");
+        }
+        //创建observable
+        Observable<String> observable = Observable.defer(() -> {
+            System.out.println(System.currentTimeMillis() + " create Observable");
+            return observer -> arrayList.forEach(item -> observer.onNext(item));
+        });
+        //处理数据时间
+        for (int i = 10; i < 20; i++) {
+            try {
+                Thread.sleep(1000);
+                arrayList.add(i + "defer item");
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        //开始订阅
+        System.out.println(System.currentTimeMillis() + " start subscribe");
+        observable.subscribe(s ->  System.out.println(System.currentTimeMillis() + " 收到事件:" + s));
+    }
+```
+
+通过以上代码可以将被观察者的部分和观察者部分精简到三行，
+
+
+
+
+
+
 
 
 
