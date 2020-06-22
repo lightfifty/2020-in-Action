@@ -16,6 +16,8 @@ https://www.jianshu.com/p/fd82d18994ce
 
 https://www.runoob.com/w3cnote/android-tutorial-end.html
 
+https://www.jianshu.com/p/ee1f0d21a856
+
 
 
 
@@ -427,7 +429,7 @@ timer 创建的被观察者对象会在指定事件间隔后发射0，默认运�
 
 ![ObserveOn和SubscribeOn](ActionInRxJava.assets/schedulers.png)
 
-#### 1. 调度器类型
+### 1. 调度器类型
 
 RxJava框架的Schedulers类提供了5种预设线程，另外也可以指定我们自己的调度器。
 
@@ -440,7 +442,7 @@ RxJava框架的Schedulers类提供了5种预设线程，另外也可以指定我
 | Schedulers.newThread( )                   | 为每个任务创建一个新线程                                     |
 | Schedulers.trampoline( )                  | 当其它排队的任务完成后，在当前线程排队开始执行               |
 
-#### 2.  线程切换
+### 2.  线程切换
 
 被观察者所在线程
 
@@ -652,6 +654,7 @@ Observable.range(1,50)
                 });
 ```
 
+window还有很多变体，可以在使用的时候具体查文档。
 
 
 
@@ -659,27 +662,293 @@ Observable.range(1,50)
 
 
 
+## 第四部分 过滤Observable
+
+### 1. debounce
+
+only emit an item from an Observable if a particular timespan has passed without it emitting another item
+
+![debounce](ActionInRxJava.assets/debounce.png)
+
+防抖：只有在指定的时间内上游没有发过来新的事件，才将收到的事件发送到下游；如果指定时间内上游发送了第二个数据，则从第二个数据重新开始计时，直到这段时间内没有再收到新的事件才发送到下游。原始onComplete 不会延迟，会立即发送到下游。
+
+```java
+
+     Observable.create(emitter -> {
+                    emitter.onNext(1);Thread.sleep(1000);
+                    emitter.onNext(2);Thread.sleep(500);
+                    emitter.onNext(3);Thread.sleep(1000);
+                    emitter.onNext(4);Thread.sleep(500);
+                    emitter.onNext(5);Thread.sleep(500);
+                    emitter.onNext(6);Thread.sleep(500);
+                    emitter.onNext(7);Thread.sleep(1000);
+                    emitter.onNext(8);
+                    emitter.onNext(9);Thread.sleep(1000);
+                    emitter.onNext(10);Thread.sleep(300);
+                    emitter.onComplete();
+                })
+                .debounce(800, TimeUnit.MILLISECONDS)
+                .observeOn(Schedulers.trampoline())
+                .subscribe(i -> System.out.println(i));
+```
+
+输出：
+
+```bash
+1
+3
+7
+9
+10
+```
+
+上面的demo 我们给原始数据序列指定了不同的延时时间，而限流时间间隔设置为800ms，只有一个数据在发射后800ms内没有再次发射数据，debounce才会将该数据下发到观察者，所以只有sleep时间为1000ms的几个数据被下发了，其余的数据都被抛弃了。
+
+这里需要注意的是，虽然10 只休眠了300ms 但是后续执行了onComplete 所以也会将10号数据下发到观察者。
+
+debounce(800, TimeUnit.MILLISECONDS) 还有个同样效果的操作符 throttleWithTimeout(800, TimeUnit.MILLISECONDS)  限流
+
+这里引用一段别人的理解
+
+> 类似一个弹簧，如果一个事件相当于挤压它一下的话，它回到初始状态需要一段时间，那如果一直有事件不断的挤压它，那它一直回不到初始状态，就一个事件也弹不出来。一旦有一段时间里面没有人挤压它，他就把最后一个弹出来了。周而复始
 
 
 
+防抖
+
+当调用函数N秒后，才会执行函数中动作，若在这N秒内又重复调用该函数则将取消前一次调用，并重新计算执行时间。
+
+这个debounce在js常被使用，比如界面根据用户输入做ajax请求局部刷新页面，那么势必会重复请求接口，而实际可能在n秒内用户并没有完成输入，那么频繁调函数肯定是不准确的，那么可以设定一个debounce time，在n秒内的调用都是无效的。
 
 
 
+### 2. distinct
+
+suppress duplicate items emitted by an Observable
+
+![distinct](ActionInRxJava.assets/distinct.png)
+
+去除队列中重复的数据，只允许不重复的数据通过。默认在当前线程执行。
+
+```java
+ Observable.just(1,2,3,4,5,2,3,4,5)
+                .distinct()
+                .subscribe(i-> System.out.println(i));
+```
+
+输出内容为：
+
+```shell
+1
+2
+3
+4
+5
+```
+
+当然针对什么是重复，我们可以设置特定的函数进行更灵活的定义。下面将按照奇数和偶数来定义重复，只允许一个奇数和一个偶数通过。返回的key相当于分组名称，每组只允许有一个元素通过。
+
+```java
+  Observable.just(1,2,3,4,5,2,3,4,5)
+                .distinct(new Function<Integer, String>() {
+                    @Override
+                    public String apply(Integer integer) throws Throwable {
+                        if (integer%2==0){
+                            return "even";
+                        }else {
+                            return "odd";
+                        }
+                    }
+                })
+                .subscribe(i-> System.out.println(i));
+```
+
+![distinctUntilChanged](ActionInRxJava.assets/distinctUntilChanged.png)
+
+distinctUntilChanged可以过滤那些连续重复的数据，当然distinctUntilChanged也可以设置过滤方法处理上一个元素和当前元素决定是否过滤。
+
+```java
+Observable.just(1,3,3,3,4,4,5,5,4,3)
+                .distinctUntilChanged()
+                .subscribe(i-> System.out.println(i));
+```
+
+只过滤连续重复的内容，输出内容如下：
+
+```java
+1
+3
+4
+5
+4
+3
+```
+
+### 3. elementAt
+
+emit only item n emitted by an Observable
+
+![elementAt](ActionInRxJava.assets/elementAt.png)
 
 
 
+只允许指定位置的数据通过，比如上图只会允许索引为2的数据通过。
+
+```java
+Observable.just("a","b","c","d","e")
+                .elementAt(3)
+                .subscribe(i-> System.out.println(i));
+```
+
+比如上面的代码就只会输出“d”。如果不确定指定位置是否有值我们可以设置一个默认值。当指定位置没有值的时候会输出默认值。
+
+```java
+Observable.just("a","b","c","d","e")
+          .elementAt(10,"没有对应数据")
+          .subscribe(i-> System.out.println(i));
+```
 
 
 
+### 4. filter
+
+emit only those items from an Observable that pass a predicate test
+
+![filter](ActionInRxJava.assets/filter.png)
+
+设置过滤条件，只允许满足条件的数据通过。默认在当前线程中运行。
+
+```java
+Observable.just(1,2,3,4,5,6)
+          .filter(i -> i%2==0) // 只允许偶数通过
+          .subscribe(i-> System.out.println(i));
+```
+
+filter还有个变体称为ofType，可以过滤指定类型的数据。
+
+```java
+Observable.just("a",2,"c","23",23)
+          .ofType(String.class) // 值允许字符串类型数据通过
+          .subscribe(i-> System.out.println(i));
+```
+
+输出结果为：
+
+```java
+a
+c
+23
+```
 
 
 
+### 5. first
+
+emit only the first item (or the first item that meets some condition) emitted by an Observable
+
+![first](ActionInRxJava.assets/first.png)
+
+只允许第一个发射的元素通过，随后就是complete事件。first需要设置一个默认值，如果上有一直没有发射元素，first则会向下游发射一个默认值。
+
+first的底层实现其实就是elementAt。
+
+```java
+        Observable.just(1,2,3,4,5)
+                .first(9999)
+                .subscribe(i-> System.out.println(i));
+        
+        Observable.empty()
+                .first(2)
+                .subscribe(i-> System.out.println(i));
+```
+
+ 
+
+### 6. ignoreElements
+
+do not emit any items from an Observable but mirror its termination notification
+
+![IgnoreElements](ActionInRxJava.assets/ignoreElements.c.png)
+
+ignoreElements会忽略其他所有事件，只传送onComplete事件。
+
+```java
+Observable.just(1,3,4,5,6,7,5,4)
+                .ignoreElements()
+                .subscribe(new CompletableObserver() {
+                    @Override
+                    public void onSubscribe(@NonNull Disposable d) {
+                        System.out.println("订阅时间："+System.currentTimeMillis());
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        System.out.println("完成时间："+System.currentTimeMillis());
+                    }
+
+                    @Override
+                    public void onError(@NonNull Throwable e) {
+
+                    }
+                });
+```
 
 
 
+### 7. last
+
+emit only the last item (or the last item that meets some condition) emitted by an Observable
+
+![last](ActionInRxJava.assets/last.png)
 
 
 
+last 操作符只发送最后一个元素，及接收到complete事件的前一个元素，在rxjava中的实现是lastElement
+
+```java
+Observable.just(1,2,3,4,5)
+          .lastElement()
+          .subscribe(i-> System.out.println(i));
+```
+
+
+
+### 8. sample
+
+emit the most recent items emitted by an Observable within periodic time intervals
+
+![sample](ActionInRxJava.assets/sample.png)
+
+sample发射固定时间周期内最后的那个元素，如果周期内没有发射元素则什么都不会发送，如果一个周期还未结束，原始数据就结束了，那最后一个周期内的数据也不会发送。
+
+```java
+Observable.create(emitter -> {
+            emitter.onNext(1);
+            emitter.onNext(2);
+            Thread.sleep(1200);
+            emitter.onNext(3);
+            Thread.sleep(1000);
+            emitter.onNext(4);
+            emitter.onNext(5);
+            emitter.onNext(6);
+            emitter.onNext(7);
+            Thread.sleep(3000);
+            emitter.onNext(8);
+            Thread.sleep(500);
+            emitter.onComplete();
+        }).sample(1000, TimeUnit.MILLISECONDS)
+          .subscribe(i -> System.out.println(i));
+```
+
+输出为
+
+```shell
+2
+3
+7
+```
+
+因为8所在的最后一个周期没有结束就直接complete了，所以8也不会被发送。
 
 
 
