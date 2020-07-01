@@ -1,4 +1,4 @@
-# ActionInRxJava
+ActionInRxJava
 
 学习RxJava主要先了解以下几个概念
 
@@ -415,7 +415,7 @@ timer returns an Observable that emits a single number zero after a delay period
 
 timer by default operates on the computation Scheduler, or you can override this by passing in a Scheduler as a final parameter.
 
-timer 创建的被观察者对象会在指定事件间隔后发射0，默认运行在计算线程，可以手动切换。
+timer 创建的被观察者对象会在指定事件间隔后发射，默认运行在计算线程，可以手动切换。
 
 ```java
  Observable.timer(5, TimeUnit.SECONDS,Schedulers.trampoline()).subscribe(l -> System.out.println(l));
@@ -952,14 +952,579 @@ Observable.create(emitter -> {
 
 
 
+### 9. skip
+
+suppress the first n items emitted by an Observable
+
+![skip](ActionInRxJava.assets/skip.png)
+
+抑制前n个元素，从之后的元素开始接收。如下代码将会将会跳过前两个元素从第三个元素开始打印。
+
+```java
+Observable.just(1,2,3,4,5)
+          .skip(2)
+          .subscribe(i-> System.out.println(i));
+```
+
+skip还支持跳过指定时间段内的数据。
+
+
+
+### 10. take
+
+emit only the first n items emitted by an Observable
+
+![take](ActionInRxJava.assets/take.png)
+
+take和skip功能相反，take是选择性发射前两个。
+
+```java
+Observable.just(1,2,3,4,5)
+        .take(3)
+        .subscribe(i-> System.out.println(i));
+```
+
+
+
+## 第五部分 合并Observables
+
+合并是将多个线程的被观察者合并到一个线程中展示，这里值得注意的是如果是要展示多个线程的协作，我们有时需要将主线程挂起，下面两个方式可以实现：
+
+```java
+try { // 加在测试代码的最后
+    System.in.read();
+} catch (IOException e) {
+    e.printStackTrace();
+}
+```
+
+或者直接让主线程sleep一段时间
+
+```java
+try {
+    Thread.sleep(10000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+}
+```
+
+
+
+### 1. combineLatest
+
+when an item is emitted by either of two Observables, combine the latest item emitted by each Observable via a specified function and emit items based on the results of this function
+
+![combineLatest](ActionInRxJava.assets/combineLatest.c.png)
+
+combineLatest接收第二个数据源，两个数据源都发射数据后，之后的每个数据都可以和另外数据源的最近的数据进行合并。
+
+
+
+### 2. join
+
+combine items emitted by two Observables whenever an item from one Observable is emitted during a time window defined according to an item emitted by the other Observable
+
+![Join](ActionInRxJava.assets/join.c.png)
+
+join是基于两个Observable各自的时间窗口来进行合并的过程。既然提到时间窗口，就需要为两个Observable源分别设置延时时间，以及在时间窗口内遇到后合并的规则。
+
+join有四个参数：
+
+参数1：第二个Observable源。
+
+参数2：接收从第一个Observable源收到的数据，返回一个新的Observable（不用于传递数据），这个Observable的声明周期决定了第一个数据源的元素的有效窗口有多长。
+
+参数3：接收从第二个Observable源收到的数据，返回一个新的Observable（不用于传递数据），这个这个Observable的声明周期决定了第二个数据源的元素的有效窗口有多长。
+
+参数4：接收两个数据，返回合并后的数据。
+
+涉及两个时间窗口做匹配，这里有几种场景：
+
+（1） 时间窗口没有重合，此时不会走合并函数，也不会有合并后输出。
+
+```java
+final long start = System.currentTimeMillis();
+System.out.println("start:" + start);
+Observable<Object> observableA = Observable.create(emitter -> {
+    emitter.onNext(1);
+//    Thread.sleep(5000);
+    emitter.onComplete();
+}).subscribeOn(Schedulers.computation());
+Observable<Object> observableB = Observable.create(emitter -> {
+    Thread.sleep(2000);
+    emitter.onNext("A");
+    emitter.onComplete();
+}).subscribeOn(Schedulers.computation());
+
+observableA.join(observableB,
+        left -> {
+            System.out.println("接收到Left数据：" + left + "  " + (System.currentTimeMillis() - start));
+            return Observable.timer(1000, TimeUnit.MILLISECONDS);
+        },
+        right -> {
+            System.out.println("接收到Right数据：" + right + "  " + (System.currentTimeMillis() - start));
+            return Observable.timer(1000, TimeUnit.MILLISECONDS);
+        },
+        (left, right) -> {
+            System.out.println("left:" + left + "  right:" + right + "  " + (System.currentTimeMillis() - start));
+            return left + ":" + right;
+        }
+).subscribeOn(Schedulers.computation())
+        .observeOn(Schedulers.trampoline())
+        .subscribe(
+                output -> System.out.println(output)
+                , error -> {}
+                , () -> System.out.println("结束时间："+ (System.currentTimeMillis() - start))
+        );
+// 休眠时间，等待输出
+try {
+    Thread.sleep(10000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+}
+```
+
+上面的代码中，1发射了2000ms之后才发射的A，1的窗口期只有1000ms，所以没有重叠的窗口期，所以不会产生合并输出。
+
+```shell
+start:1593053563160
+接收到Left数据：1  171
+接收到Right数据：A  2172
+结束时间：2172
+```
+
+关于complete的调用，是由时间上最后调用的onComplete决定的，以后者为准。
+
+（2）单个元素时间窗口重合，发射组合元素
+
+```java
+final long start = System.currentTimeMillis();
+System.out.println("start:" + start);
+Observable<Object> observableA = Observable.create(emitter -> {
+    emitter.onNext(1);
+    emitter.onComplete();
+}).subscribeOn(Schedulers.computation());
+Observable<Object> observableB = Observable.create(emitter -> {
+    Thread.sleep(1000);
+    emitter.onNext("A");
+    emitter.onComplete();
+}).subscribeOn(Schedulers.computation());
+
+observableA.join(observableB,
+        left -> {
+            System.out.println("接收到Left数据：" + left + "  " + (System.currentTimeMillis() - start));
+            return Observable.timer(2000, TimeUnit.MILLISECONDS);
+        },
+        right -> {
+            System.out.println("接收到Right数据：" + right + "  " + (System.currentTimeMillis() - start));
+            return Observable.timer(1000, TimeUnit.MILLISECONDS);
+        },
+        (left, right) -> {
+            System.out.println("left:" + left + "  right:" + right + "  " + (System.currentTimeMillis() - start));
+            return left + ":" + right;
+        }
+).subscribeOn(Schedulers.computation())
+        .observeOn(Schedulers.trampoline())
+        .subscribe(
+                output -> System.out.println(output)
+                , error -> {}
+                , () -> System.out.println("结束时间："+ (System.currentTimeMillis() - start))
+        );
+// 休眠时间，等待输出
+try {
+    Thread.sleep(10000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+}
+
+```
+
+还是上面的实例，我们修改ObservableA的元素有效时间，和ObservableB的发射时间，结果如下：
+
+```bash
+start:1593085836998
+接收到Left数据：1  184
+接收到Right数据：A  1185
+left:1  right:A  1185
+1:A
+结束时间：1210
+```
+
+（3）多个元素时间窗口重合，会根据组合情况发射所有数据
+
+```java
+Observable<Object> observableA = Observable.create(emitter -> {
+    emitter.onNext(1);
+    emitter.onNext(2);
+    emitter.onComplete();
+}).subscribeOn(Schedulers.computation());
+Observable<Object> observableB = Observable.create(emitter -> {
+    Thread.sleep(1000);
+    emitter.onNext("A");
+    emitter.onNext("B");
+    emitter.onComplete();
+}).subscribeOn(Schedulers.computation());
+```
+
+输出结果为：
+
+```java
+start:1593086576675
+接收到Left数据：1  200
+接收到Left数据：2  217
+接收到Right数据：A  1212
+left:1  right:A  1212
+1:A
+left:2  right:A  1228
+2:A
+接收到Right数据：B  1228
+left:1  right:B  1228
+1:B
+left:2  right:B  1228
+2:B
+结束时间：1228
+```
+
+
+
+### 3. merge
+
+combine multiple Observables into one by merging their emissions
+
+![merge](ActionInRxJava.assets/merge.png)
+
+
+
+merge可以将多个Observable合并为一个，并严格按照时间顺序合并，值得注意的是只要有一个Observable发射了onError事件，合并后的事件流会立即停止。
+
+```java
+Observable observableA = Observable.just(1,2,3,4,5).subscribeOn(Schedulers.computation());
+Observable observableB = Observable.just(6,7,8,9).subscribeOn(Schedulers.computation());
+observableA.mergeWith(observableB)
+        .subscribe(i-> System.out.println(i));
+// 休眠时间，等待输出
+try {
+    Thread.sleep(10000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+}
+```
+
+### 4. startWith
+
+emit a specified sequence of items before beginning to emit the items from the source Observable
+
+![startWith](ActionInRxJava.assets/startWith.png)
+
+startWith可以在Observable发射数据之前，发射一个指定的序列，startWith可以接收一个可迭代对象或者单个元素，还可以接收另一个Observable。
+
+这里我们只展示下接收Observable的情况。默认不在任何调度器上运行。
+
+```java
+Observable observableA = Observable.just(1,2,3,4,5);
+Observable observableB = Observable.create(emitter -> {
+    emitter.onNext("A");
+    Thread.sleep(1000);
+    emitter.onNext("B");
+    emitter.onNext("C");
+    emitter.onComplete();// 必须要调用onComplete之后，才会发射observableA的内容。
+});
+observableA.startWith(observableB)
+        .observeOn(Schedulers.trampoline())
+        .subscribe(i-> System.out.println(i));
+```
+
+输出结果为：
+
+```shell
+A
+B
+C
+1
+2
+3
+4
+5
+```
+
+### 5. switchOnNext
+
+convert an Observable that emits Observables into a single Observable that emits the items emitted by the most-recently-emitted of those Observables
+
+![switch](ActionInRxJava.assets/switchDo.png)
+
+switchOnNext订阅一个可以发射Observables的源，每个Observable都可以向switchOnNext发射数据，但同一时刻只会接受一个源发射的数据，意味着当订阅第二个Observable之后，会立即取消第一个Observable的订阅，不在接受第一个Observable发射的数据。
+
+```java
+ Observable.switchOnNext(Observable.interval(100, TimeUnit.MILLISECONDS)
+                .map(i -> Observable.interval(30, TimeUnit.MILLISECONDS).map(i2 -> i)))
+                .take(9)
+                .subscribe(System.out::println);
+```
+
+上面的输出结果为：
+
+```shell
+0
+0
+0
+1
+1
+1
+2
+2
+2
+```
 
 
 
 
 
+### 6. zip
+
+combine the emissions of multiple Observables together via a specified function and emit single items for each combination based on the results of this function
+
+![zip](ActionInRxJava.assets/zip.o.png)
+
+zip 从多个Observable中接收数据，比如订阅了三个源，如上图所示，zip 会将每个源的第1个元素收集齐后将三个数据进行压缩合并生成一个数据返回给下游。
+
+至于三个元素怎么组合由指定函数决定。    这里需要注意的是，必须要收集齐三个元素才会压缩一次，如果第一个源发射的快，第二个源发射的慢，第三个发射源最慢，则前面两个元素会等待第三个元素发射后才会进行合并。所以zip发射元素的速度取决于最慢的那个Observable，发射的个数取决于最少的那个Observable。
+
+```java
+Observable observableA= Observable.create(emitter -> {
+            emitter.onNext(1);
+            Thread.sleep(500);
+            emitter.onNext(2);
+            Thread.sleep(500);
+            emitter.onNext(3);
+            Thread.sleep(500);
+        });
+Observable observableB = Observable.create(emitter -> {
+            emitter.onNext("A");
+            Thread.sleep(1000);
+            emitter.onNext("B");
+            Thread.sleep(1000);
+            emitter.onNext("C");
+            Thread.sleep(1000);
+            emitter.onNext("D");
+            Thread.sleep(1000);
+            emitter.onNext("E");
+            Thread.sleep(1000);
+            emitter.onNext("F");
+        });
+        Observable.zip(observableA,observableB,(a,b)->a+":"+b)
+                .observeOn(Schedulers.computation())
+                .subscribeOn(Schedulers.trampoline())
+                .subscribe(c-> System.out.println(c));
+```
+
+上面的代码输出结果为：
+
+```shell
+1:A
+2:B
+3:C
+```
+
+observableA发射的快，数量只有3个，observableB发射的慢，但数量多。   最终zip的结果是数量取决于最少的ObservableA，发射间隔取决于发射最慢的ObservableB。
+
+
+
+## 第六部分 错误处理
+
+### 1. onErrorReturn
+
+instructs an Observable to emit a particular item when it encounters an error, and then terminate normally
+
+![onErrorReturn](ActionInRxJava.assets/onErrorReturn.png)
+
+
+
+onErrorReturn 让Observable遇到错误时发射一个特殊的项并且正常终止。
+
+```java
+Observable.create(emitter -> {
+            emitter.onNext(1);
+            emitter.onNext(2);
+            emitter.onError(new Exception());
+            emitter.onNext(3);
+        }).onErrorReturn(e -> 999)
+                .subscribe(
+                        i -> System.out.println(i),
+                        throwable -> System.out.println("error:"),
+                        () -> System.out.println("complete")
+                );
+```
+
+上面的示例代码可以让999代替error输出，并且会调用onComplete。
+
+```java
+1
+2
+999
+complete
+```
 
 
 
 
 
+### 2. onErrorResumeNext
+
+
+
+![onErrorResumeNext](ActionInRxJava.assets/onErrorResumeNext.png)
+
+为原始序列中的Error准备了一个备用Observable，当error发生时会启动备用Observable，发射完毕后会产生一onComplete事件。
+
+```
+Observable.create(emitter -> {
+    emitter.onNext(1);
+    emitter.onNext(2);
+    emitter.onError(new Exception());
+    emitter.onNext(3);
+}).onErrorResumeNext(e -> Observable.just(7, 8, 9))
+        .subscribe(
+                i -> System.out.println(i),
+                throwable -> System.out.println("error:"),
+                () -> System.out.println("complete")
+        );
+```
+
+输出结果为：
+
+```shell
+1
+2
+7
+8
+9
+complete
+```
+
+当然还有类似的捕捉Exception的方法 onExceptionResumeNext(Observable))
+
+
+
+### 3. retry
+
+if a source Observable emits an error, resubscribe to it in the hopes that it will complete without error
+
+![retry](ActionInRxJava.assets/retry.png)
+
+
+
+
+
+retry可以在发射过程中出现错误时，会重新订阅该Observable，不设参数的情况下会给你无限次机会让Observable重试。设定参数则会限定重试的次数，等超过之后会将最近的error传递给下游。当然retry会重复发射之前的数据。
+
+
+
+```java
+ AtomicInteger tmp = new AtomicInteger(1);
+        Observable.create(emitter -> {
+            emitter.onNext(1);
+            emitter.onNext(2);
+            tmp.getAndIncrement();
+            if (tmp.get() <= 2) {
+                emitter.onError(new RuntimeException());
+            }
+            emitter.onNext(3);
+        })
+                .retry(5)
+                .observeOn(Schedulers.computation())
+                .subscribeOn(Schedulers.trampoline())
+                .subscribe(i -> System.out.println(i));
+
+System.in.read();// 挂起主线程
+```
+
+上面的实例我们允许原始Observable可以重试5次，但通过一个自增变量，到第3次的时候已经不发射error了，所以最终结果为：
+
+```shell
+> Task :ErrorDemo.main()
+1
+2
+1
+2
+3
+```
+
+### 4. retryWith
+
+
+
+![retryWhen](ActionInRxJava.assets/retryWhen.f.png)
+
+
+
+
+
+`retryWhen`将`onError`中的`Throwable`传递给一个函数，这个函数产生另一个Observable，`retryWhen`观察它的结果再决定是不是要重新订阅原始的Observable。如果这个Observable发射了一项数据，它就重新订阅，如果这个Observable发射的是`onError`通知，它就将这个通知传递给观察者然后终止。
+
+todo 这里的代码其实也不是很清楚，需要更多范例练习。
+
+```java
+ AtomicInteger tmp = new AtomicInteger(1);
+        Observable.create(emitter -> {
+            emitter.onNext(1);
+            Thread.sleep(100);
+            emitter.onNext(2);
+            emitter.onError(new RuntimeException());
+            emitter.onNext(3);
+        }).retryWhen(new Function<Observable<Throwable>, ObservableSource<?>>() {
+            @Override
+            public ObservableSource<?> apply(Observable<Throwable> throwableObservable) throws Throwable {
+                tmp.getAndIncrement();
+                if (tmp.get() < 5) {
+                    return Observable.just(999).delay(1, TimeUnit.SECONDS);
+                }
+                return Observable.error(new Throwable());
+            }
+        }).subscribeOn(Schedulers.computation())
+                .observeOn(Schedulers.trampoline())
+                .subscribe(i -> System.out.println(i));
+```
+
+
+
+
+
+## 第七部分 辅助操作
+
+### 1. delay
+
+shift the emissions from an Observable forward in time by a particular amount
+
+![delay](ActionInRxJava.assets/delay.png)
+
+
+
+delay就是给每个元素设定一个延时，但要注意的是延时对onError不生效。
+
+```java
+Observable.create(emitter -> {
+            emitter.onNext(1);
+            Thread.sleep(1000);
+            emitter.onNext(2);
+            emitter.onNext(3);
+            Thread.sleep(1000);
+            emitter.onError(new NullPointerException());
+            emitter.onNext(4);
+        }).delay(2, TimeUnit.SECONDS)
+                .subscribeOn(Schedulers.computation())
+                .observeOn(Schedulers.trampoline())
+                .subscribe(i-> System.out.println(i),
+                        e-> System.out.println("error  "+e.getMessage()),
+                        ()-> System.out.println("complete"));
+```
+
+上面的代码中，1发射后休眠1S之后才发射的2和3，之后休眠1S后发射的onError ，设定的延时时长为：2000ms，
+
+所以当发射到onError的时候1的延时时长够了，可以转发到下游，随后立即发送了onError中断了监听。
+
+```shell
+1
+error  null
+```
 

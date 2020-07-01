@@ -17,7 +17,21 @@ public class FilterDemo {
 //        testFirst();
 //        testIgonreElement();
 //          testLast();
-        testSample();
+//        testSample();
+//        testSkip();
+//        testTake();
+    }
+
+    private static void testTake(){
+        Observable.just(1,2,3,4,5)
+                .take(3)
+                .subscribe(i-> System.out.println(i));
+    }
+
+    private static void testSkip(){
+        Observable.just(1,2,3,4,5)
+                .skip(2)
+                .subscribe(i-> System.out.println(i));
     }
 
     private static void testSample() {
